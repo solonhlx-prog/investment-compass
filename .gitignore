@@ -25,3 +25,6 @@ stock_data/
 # OS
 .DS_Store
 Thumbs.db
+
+# Tools
+.playwright-cli/
