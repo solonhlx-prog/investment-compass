@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.env
+venv/
+*.egg-info/
+dist/
+build/
+.python-version
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Project specific
+.workbuddy/
+outputs/
+*.db
+stock_data/
+*.parquet
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
