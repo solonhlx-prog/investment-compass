@@ -3,7 +3,7 @@
 > *「不预测，只应对。不替你做决定，只帮你判断方向。」*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.6.0-green)]()
+[![Version](https://img.shields.io/badge/version-1.7.0-green)]()
 [![Python](https://img.shields.io/badge/Python-3.9+-blue)]()
 
 <br>
@@ -41,16 +41,16 @@
 
 ### 3. 选股分析
 
-全市场/行业 B1 六维筛选 + 双线过滤，按综合评分排名。
+全市场/行业 B1 量化筛选管线（`scripts/screening.py`，P0 移植自 Z哥体系），按综合评分排名。
 
-| 维度 | 阈值 | 排除逻辑 |
-|------|------|---------|
-| J 值 | ≤ -8 | 超卖确认 |
-| 量比 | < 0.85 | 抛压未枯竭 |
-| 乖离 MA20 | < -3% | 安全边际不足 |
-| 10日跌幅 | > -25% | 排除崩盘 |
-| 股价 | > 3 元 | 排除仙股 |
-| 双线过滤 | 白线 > 黄线 | 主力不在 = 不碰 |
+**管线四关**（任一不通过即淘汰）：
+
+1. **基础条件**：J ≤ -8、量比 < 0.85、乖离 MA20 ≤ -3%、10日跌幅 ≥ -25%、股价 > 3 元、双线白 > 黄、非绿砖状态
+2. **硬过滤·蜈蚣图**（一票否决）：堆量不涨/影线交替/无呼吸节奏，五因子总分 ≥ 60 排除
+3. **硬过滤·沙漏审美**（一票否决）：图形五因子总分 < 50 排除（≥80 为完美图形）
+4. **MDC 七层验证**：麒麟阶段 + 布林下轨 + 资金流 + RSI6 + ADX 多维打分，输出置信度 0.1~0.98
+
+所有阈值集中在 `config.B1_PARAMS`，支持 `.env` 覆盖（详见 `.env.example`）。
 
 ```
 触发方式：用户说「证券行业选股」「B1选股」「TOP N」
@@ -125,9 +125,10 @@ STOCK_DATA_DIR=/path/to/your/stock_data
 ├── docs/
 │   └── first-principles.md      # 第一性原理总结
 ├── scripts/
-│   ├── config.py                # 共享配置（.env 加载）
+│   ├── config.py                # 共享配置（.env 加载 + B1_PARAMS 可配置阈值）
 │   ├── data.py                  # 数据访问层（三级降级）
-│   └── daily.py                 # 每日四步工作流
+│   ├── daily.py                 # 每日四步工作流
+│   └── screening.py             # B1 选股引擎（P0：MDC验证+蜈蚣图/沙漏硬过滤）
 ├── knowledge/                   # 知识模块（6 个）
 │   ├── 01-timing.md             # 择时：活跃市值/市场阶段/BBI方向
 │   ├── 02-allocation.md         # 配置：4231阵型/仓位分级/ABC建仓

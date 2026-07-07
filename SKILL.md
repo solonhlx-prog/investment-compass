@@ -17,7 +17,7 @@ description: |
 
   Output format: 中文，结构化的分析报告（非角色扮演）
 
-  Version: 1.6.0 | 2026-07-01
+  Version: 2.0.0 | 2026-07-08
 
   知识来源：基于公开投资策略知识体系蒸馏
 ---
@@ -39,4 +39,4 @@ description: |
 
 ---
 
-> 投研罗盘 v1.6.0 | 平台无关的 AI Agent 技能包 | WorkBuddy 适配层
+> 投研罗盘 v2.0.0 | 平台无关的 AI Agent 技能包 | WorkBuddy 适配层

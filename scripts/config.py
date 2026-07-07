@@ -44,3 +44,41 @@ STOCK_DATA_DIR: Path = Path(_raw) if _raw else Path.home() / "stock_data"
 
 # 输出目录
 OUTPUT_DIR: Path = Path(os.environ.get("REPORT_OUTPUT_DIR", str(Path(__file__).parent.parent / "outputs")))
+
+
+# ── B1 选股参数（P0 移植：原硬编码阈值全部可配置化）──
+# 通过环境变量覆盖，例如 .env 中写 B1_J_THRESHOLD=-10
+def _float_env(key: str, default: float) -> float:
+    v = os.environ.get(key, "")
+    if v == "":
+        return default
+    try:
+        return float(v)
+    except ValueError:
+        return default
+
+
+B1_PARAMS: dict = {
+    # ── 硬过滤四关（一票否决）──
+    "j_threshold": _float_env("B1_J_THRESHOLD", 14.0),           # J值上限（v2: -8→14，对齐Z哥完美图）
+    "centipede_max": _float_env("B1_CENTIPEDE_MAX", 70.0),       # 蜈蚣图 >= 此值 → 淘汰（v2: 60→70，避免B1窄幅震荡误杀）
+    "price_min": _float_env("B1_PRICE_MIN", 3.0),                # 最低股价
+    "min_history": _float_env("B1_MIN_HISTORY", 30.0),           # 最少历史天数
+    "min_total_score": _float_env("B1_MIN_TOTAL_SCORE", 40.0),   # 综合评分最低门槛（v2新增）
+    "require_white_above_yellow": True,                          # 双线白>黄（硬过滤关3）
+
+    # ── 保留：MDC 验证参数 ──
+    "rsi6_ceiling": _float_env("B1_RSI6_CEILING", 25.0),
+    "adx_floor": _float_env("B1_ADX_FLOOR", 40.0),
+
+    # ── 保留：硬过滤参数 ──
+    "sandglass_min": _float_env("B1_SANDGLASS_MIN", 30.0),       # v2: -20→30，沙漏不再是硬过滤
+
+    # ── v1遗留（v2已删除或替代）──
+    "j_blunt_floor": -3.0,       # 已删除：被F9连续J评分替代
+    "green_brick_limit": 4.0,    # 已在MDC中保留
+    "vol_ratio_max": 0.85,       # 已删除：被F11选股缩量比替代
+    "dev_ma20_require_below": -3.0,  # 已删除：被F6支撑偏离度替代(P1)
+    "drop_10d_min": -25.0,       # 已删除：被F5回调深度比替代(P1)
+}
+

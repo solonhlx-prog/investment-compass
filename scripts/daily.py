@@ -88,12 +88,16 @@ def step_timing() -> None:
 # Step 3: B1 全市场选股
 # ═══════════════════════════════════════════════
 def step_screening() -> None:
-    """六维筛选 B1 候选"""
+    """B1 全市场选股（P0 移植：六维筛选 + 双线过滤 + MDC验证 + 蜈蚣图/沙漏硬过滤）"""
     if REPORT.get("strategy") == "防守":
         REPORT["top5"] = []
         return
 
     try:
+        # 延迟导入，避免无 pandas/numpy 环境下模块加载即报错
+        from screening import screen_universe
+        from config import B1_PARAMS
+
         # Stock names
         names: Dict[str, str] = {}
         try:
@@ -103,126 +107,18 @@ def step_screening() -> None:
         except Exception:
             pass
 
-        candidates: List[Dict[str, Any]] = []
         files = list(DATA_DIR.glob("*.parquet"))
+        if not files:
+            # 无本地数据（websearch 模式或未下载）：优雅降级为框架说明
+            REPORT["top5"] = []
+            REPORT["errors"].append(
+                "选股跳过：本地无日线数据（DATA_MODE=websearch 或未配置 STOCK_DATA_DIR）。"
+                "TT 模式下提供本地 Parquet 后自动启用 B1 P0 全管线。"
+            )
+            return
 
-        for f in files:
-            ts_code = f.stem
-            # Skip indices
-            if ts_code.startswith("000") and ts_code.endswith(".SH"):
-                continue
-            if ts_code.startswith("399"):
-                continue
-
-            try:
-                df = pd.read_parquet(f)
-                if len(df) < 30:
-                    continue
-                df = df.sort_values("trade_date").reset_index(drop=True).tail(40)
-
-                close = df["close"].astype(float).values
-                low = df["low"].astype(float).values
-                high = df["high"].astype(float).values
-                vol = df["vol"].astype(float).values
-
-                # ── 股价 > 3元 ──
-                if close[-1] <= 3:
-                    continue
-
-                # ── KDJ(9,3,3) ──
-                low9 = pd.Series(low).rolling(9).min().values
-                high9 = pd.Series(high).rolling(9).max().values
-                rsv = np.where(high9 - low9 > 0, (close - low9) / (high9 - low9) * 100, 50)
-
-                k = np.zeros(len(close))
-                d = np.zeros(len(close))
-                k[:8] = 50; d[:8] = 50
-                for i in range(8, len(close)):
-                    k[i] = 2/3 * k[i-1] + 1/3 * rsv[i]
-                    d[i] = 2/3 * d[i-1] + 1/3 * k[i]
-                j = 3 * k - 2 * d
-
-                j_latest = j[-1]
-                if j_latest > -8:
-                    continue
-
-                # ── J 钝化排除 ──
-                if max(j[-10:]) < -3:
-                    continue
-
-                # ── 量比 < 0.85 ──
-                vol_ma5 = np.mean(vol[-6:-1])
-                vol_ratio = vol[-1] / vol_ma5 if vol_ma5 > 0 else 1
-                if vol_ratio >= 0.85:
-                    continue
-
-                # ── 乖离 MA20 < -3% ──
-                ma20 = np.mean(close[-20:])
-                dev_ma20 = (close[-1] - ma20) / ma20 * 100
-                if dev_ma20 > -3:
-                    continue
-
-                # ── 10日跌幅 > -25% ──
-                if len(close) >= 10:
-                    pct_10d = (close[-1] / close[-11] - 1) * 100
-                    if pct_10d < -25:
-                        continue  # 排除崩盘
-
-                # ── BBI ──
-                ma3 = np.mean(close[-3:]); ma6 = np.mean(close[-6:])
-                ma12 = np.mean(close[-12:]); ma24 = np.mean(close[-24:])
-                bbi = (ma3 + ma6 + ma12 + ma24) / 4
-                bbi_dist = (close[-1] - bbi) / bbi * 100
-
-                # ── 双线系统 (白线/黄线) ──
-                ema10 = pd.Series(close).ewm(span=10, adjust=False).mean().values
-                white = pd.Series(ema10).ewm(span=10, adjust=False).mean().values
-                yellow = (
-                    pd.Series(close).rolling(14).mean().values +
-                    pd.Series(close).rolling(28).mean().values +
-                    pd.Series(close).rolling(57).mean().values +
-                    pd.Series(close).rolling(114).mean().values
-                ) / 4
-
-                white_latest = white[-1]
-                yellow_latest = yellow[-1]
-                dual_status = "白>黄" if white_latest > yellow_latest else "白<黄"
-
-                # ── Double-line filter: skip 白<黄 ──
-                if dual_status == "白<黄":
-                    continue
-
-                # ── N-type ──
-                n_type = min(low[-5:]) >= min(low[-10:-5])
-
-                # ── Score ──
-                score = 0
-                if j_latest <= -12: score += 3
-                elif j_latest <= -10: score += 2
-                elif j_latest <= -8: score += 1
-                if vol_ratio < 0.6: score += 2
-                elif vol_ratio < 0.75: score += 1
-                if n_type: score += 1
-                if bbi_dist > -10: score += 1
-
-                candidates.append({
-                    "ts_code": ts_code,
-                    "name": names.get(ts_code, ""),
-                    "close": round(float(close[-1]), 2),
-                    "j": round(float(j_latest), 1),
-                    "vol_ratio": round(float(vol_ratio), 2),
-                    "dev_ma20": round(float(dev_ma20), 1),
-                    "bbi": round(float(bbi), 2),
-                    "bbi_dist": round(float(bbi_dist), 1),
-                    "dual": dual_status,
-                    "n_type": n_type,
-                    "score": score,
-                })
-            except Exception:
-                continue
-
-        candidates.sort(key=lambda x: (-x["score"], x["j"]))
-        REPORT["top5"] = candidates[:10]
+        candidates = screen_universe(files, names, B1_PARAMS, top_n=10)
+        REPORT["top5"] = candidates
 
     except Exception as e:
         REPORT["errors"].append(f"选股失败: {e}")
@@ -237,7 +133,7 @@ def step_report() -> None:
     report_path = OUTPUT_DIR / f"daily_report_{datetime.now().strftime('%Y%m%d')}.json"
 
     output = {
-        "version": "投研罗盘 v1.6.0",
+        "version": "投研罗盘 v1.7.0",
         "date": REPORT["date"],
         "timing": REPORT["timing"].get("_summary", {}),
         "indices": {k: v for k, v in REPORT["timing"].items() if not k.startswith("_")},
@@ -275,11 +171,19 @@ if __name__ == "__main__":
         sys.exit(0)
     print(f"  {REPORT['strategy']}策略，执行B1选股", flush=True)
 
-    print("Step 3/4: B1全市场选股（六维筛选+双线过滤）...", flush=True)
+    print("Step 3/4: B1全市场选股（四关硬过滤 + 连续型评分 + 区分特征层）...", flush=True)
     step_screening()
     print(f"  候选: {len(REPORT['top5'])} 只", flush=True)
     for i, c in enumerate(REPORT["top5"][:5]):
-        print(f"  #{i+1} {c['ts_code']} {c['name']} J={c['j']} 量比={c['vol_ratio']} 双线={c['dual']} 评分={c['score']}", flush=True)
+        base = c.get("base_score", 0)
+        dist = c.get("dist_score", 0)
+        brk = c.get("break_type", "N/A")
+        sand = c.get("sandglass_score", 0)
+        print(f"  #{i+1} {c['ts_code']} {c['name']} J={c['j']} "
+              f"突破={brk}({c.get('break_vol_ratio','-')}) "
+              f"评分={c['score']}(基础{base}+区分{dist}) "
+              f"金叉={c.get('cross_days','-')}天 "
+              f"沙漏={sand}", flush=True)
 
     print("Step 4/4: 输出TOP5日报...", flush=True)
     step_report()
